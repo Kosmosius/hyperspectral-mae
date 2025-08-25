@@ -1,5 +1,6 @@
 # hyperspectral-mae
 
+```
 spectralae/
   core/                    # physics, numerics, data models (NO torch here)
     __init__.py
@@ -73,3 +74,4 @@ spectralae/
     build_bases.py         # generate persisted bases with hashes
     build_srf_cache.py     # project SRFs to basis, cache + hash
     sanity_renderer.py
+```

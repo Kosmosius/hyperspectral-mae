@@ -91,3 +91,43 @@ def student_t_nll(
     if mask is not None:
         denom = mask.to(nll.dtype).sum().clamp_min(1.0) if cfg.reduction == "mean" else 1.0
     else:
+        denom = 1.0
+
+    if cfg.reduction == "mean":
+        return nll.sum() / denom
+    if cfg.reduction == "sum":
+        return nll.sum()
+    return nll
+
+
+def expected_calibration_error(
+    residual: Tensor,
+    sigma: Tensor,
+    mask: Optional[Tensor] = None,
+    num_bins: int = 10,
+) -> Tensor:
+    """
+    ECE for standardized residuals |r| = |residual|/sigma, comparing empirical |r| to
+    idealized Laplace-ish expectation. We use bins of predicted |r| and measure mean abs
+    deviation from the bin centers. This is a heuristic diagnostic.
+
+    Returns: scalar ECE.
+    """
+    if mask is not None:
+        residual = residual[mask]
+        sigma = sigma[mask]
+    sigma = sigma.clamp_min(1e-8)
+    r = residual.abs() / sigma
+    if r.numel() == 0:
+        return torch.tensor(0.0, device=residual.device)
+    # Bin by predicted |r|
+    bins = torch.linspace(0, r.max().detach(), steps=num_bins + 1, device=r.device)
+    ece = torch.tensor(0.0, device=r.device)
+    total = torch.tensor(0.0, device=r.device)
+    for i in range(num_bins):
+        m = (r >= bins[i]) & (r < bins[i + 1])
+        if m.any():
+            e = (r[m] - r[m].mean()).abs().mean()  # deviation inside bin
+            ece = ece + e * m.sum()
+            total = total + m.sum()
+    return (ece / total.clamp_min(1.0)).detach()

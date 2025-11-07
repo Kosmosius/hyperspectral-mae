@@ -7,7 +7,7 @@ from typing import Optional
 import torch
 from torch import nn
 
-from .blocks import FactorizedBlock
+from hsi_fm.model.blocks import FactorizedBlock
 
 
 @dataclass

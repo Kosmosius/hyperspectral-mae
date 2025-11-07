@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Union
 
-from .srf import SpectralResponseFunction, convolve_srf, gaussian_srf
+from hsi_fm.physics.srf import SpectralResponseFunction, convolve_srf, gaussian_srf
 
 
 Number = float

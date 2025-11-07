@@ -12,6 +12,25 @@ This repository provides a scaffold for a production-ready hyperspectral foundat
 - Training scripts for each stage and consolidated evaluation utilities.
 - Unit tests covering SRF convolution and renderer consistency.
 
+## Repository layout
+
+```
+hsi_fm/
+  configs/    # Hydra configs for data, models, training, and physics
+  data/       # Dataset and patch sampling utilities
+  eval/       # Lightweight evaluation entry points
+  model/      # Backbone, heads, and loss functions
+  physics/    # Spectral response and rendering helpers
+  teachers/   # Placeholder teacher signals
+  train/      # Training utilities and stage drivers
+  scripts/    # CLI entry points (train/eval/prepare-data)
+  tests/      # Pytest suite targeting the core modules
+tools/
+  repo_cleanup.py  # Maintains the hsi_fm-centric layout
+archive/
+  legacy/     # Original modules kept for reference
+```
+
 ## Installation
 
 ```bash
@@ -20,30 +39,36 @@ pip install -e .
 
 ## Quickstart
 
-1. Prepare toy data assets:
+1. Prepare toy data assets (optional):
 
-```bash
-python -m hsi_fm.scripts.prepare_data ./data_stub
-```
+   ```bash
+   python -m hsi_fm.scripts.prepare_data ./data_stub
+   ```
 
-2. Launch pretraining using the default configuration:
+2. Launch Stage A pretraining on synthetic data:
 
-```bash
-python -m hsi_fm.scripts.train hsi_fm/configs/config.yaml
-```
+   ```bash
+   hsi-train --config-path hsi_fm/configs --config-name config.yaml
+   ```
 
-3. Evaluate on placeholder benchmarks:
+   You can also invoke the module directly:
 
-```bash
-python -m hsi_fm.scripts.evaluate hsi_fm/configs/config.yaml
-```
+   ```bash
+   python -m hsi_fm.scripts.train hsi_fm/configs/config.yaml
+   ```
+
+3. Evaluate the placeholder metrics:
+
+   ```bash
+   hsi-eval hsi_fm/configs/config.yaml
+   ```
 
 ## Tests
 
 Run the unit tests with:
 
 ```bash
-pytest
+pytest -q
 ```
 
 ## License

@@ -10,7 +10,8 @@ lr_schedule:
   warmup_steps: 1000
 precision: bf16
 accumulate_grad_batches: 2
-distributed:
-  backend: nccl
-  use_activation_checkpointing: true
-  use_flash_attention: true
+ddp: false
+use_flash: false
+use_checkpointing: false
+clip_grad_norm: 1.0
+checkpoint_path: null

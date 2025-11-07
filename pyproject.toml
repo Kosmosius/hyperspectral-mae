@@ -28,6 +28,7 @@ dependencies = [
 [project.scripts]
 hsi-train = "hsi_fm.scripts.train:main"
 hsi-eval = "hsi_fm.scripts.evaluate:main"
+hsi-evaluate-emit-min = "hsi_fm.scripts.evaluate_emit_min:main"
 
 [project.optional-dependencies]
 dev = [

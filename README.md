@@ -63,6 +63,40 @@ pip install -e .
    hsi-eval hsi_fm/configs/config.yaml
    ```
 
+## Real data quickstart
+
+The repository ships only the scaffolding; you must supply EMIT/EnMAP products locally.
+
+1. Configure EMIT L2A ingestion by pointing Hydra to your files:
+
+   ```bash
+   python -m hsi_fm.scripts.train \
+     hsi_fm/configs/config.yaml \
+     train.stage=stage_b \
+     data=emit_l2a \
+     data.paths='[/path/to/emit/*.nc]' \
+     train.batch_size=2
+   ```
+
+   The command initialises the Stage B pipeline, parses SRFs, builds geometry/sensor tokens, and exercises the physics alignment loop for a couple of steps. Substitute `emit_l1b` or `enmap_l2a` to ingest other products. QA filtering thresholds and tiling dimensions live in the corresponding `hsi_fm/configs/data/*.yaml` files.
+
+2. Evaluate EMIT L2B mineral predictions produced by an external model:
+
+   ```bash
+   hsi-evaluate-emit-min --pred ./predictions --truth '/data/emit_l2b/*.npz' --out metrics.csv
+   ```
+
+   Both predictions and truth are expected to be `.npz` archives containing `mineral_ids`, `band_depths`, `reflectance`, and `wavelengths` arrays.
+
+### Distributed and mixed precision training
+
+- Toggle DistributedDataParallel via `train.ddp=true` and launch with `torchrun`/`torch.distributed.run`. Checkpoints are only emitted on rank 0.
+- Automatic mixed precision is controlled with `train.precision` (`fp32`, `bf16`, `fp16`).
+- FlashAttention v2 can be enabled with `train.use_flash=true` on PyTorch ≥ 2.2; the script falls back gracefully if kernels are unavailable.
+- Gradient checkpointing is exposed through `train.use_checkpointing`.
+
+> **Note:** The repository performs CPU-only execution for CI. GPU execution is supported when CUDA devices are present.
+
 ## Tests
 
 Run the unit tests with:

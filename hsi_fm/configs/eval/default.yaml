@@ -1,0 +1,6 @@
+solids:
+  dataset: emit_min
+  metrics: [f1, sam, band_depth_mae]
+gases:
+  dataset: methane_mdl
+  metrics: [iou, mdl]

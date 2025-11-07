@@ -1,0 +1,13 @@
+stage: stage_b
+max_steps: 20000
+batch_size: 8
+optimizer:
+  name: adamw
+  lr: 1.5e-4
+lr_schedule:
+  name: cosine
+  warmup_steps: 1000
+alignment:
+  contrastive_weight: 1.0
+  cycle_weight: 0.5
+precision: bf16

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hsi-fm"
+version = "0.1.0"
+description = "Hyperspectral foundation model scaffold"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{name = "OpenAI", email = "research@openai.com"}]
+dependencies = [
+  "numpy",
+  "torch>=2.3",
+  "omegaconf",
+  "hydra-core",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra"
+testpaths = ["hsi_fm/tests"]

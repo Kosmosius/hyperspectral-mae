@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator, List, Mapping, Optional
 
+import numpy as np
 import torch
 from torch import Tensor
 from torch.utils.data import Dataset
@@ -58,15 +59,20 @@ class HyperspectralCube(Dataset[Mapping[str, torch.Tensor]]):
     def __getitem__(self, idx: int) -> Mapping[str, torch.Tensor]:
         cube = self._load_cube(self._paths[idx])
         info = self._metadata[idx]
+        wavelengths = torch.as_tensor(info.wavelengths, dtype=cube.dtype, device=cube.device)
+        angles = torch.tensor([info.sza, info.vza, info.raa], dtype=torch.float32, device=cube.device)
+        extra_values = (
+            torch.tensor(list(info.extra.values()), dtype=torch.float32, device=cube.device)
+            if info.extra
+            else torch.zeros(0, dtype=torch.float32, device=cube.device)
+        )
         return {
             "cube": cube,
             "metadata": {
                 "sensor": info.sensor,
-                "wavelengths": info.wavelengths.to(dtype=cube.dtype, device=cube.device),
-                "angles": torch.tensor([info.sza, info.vza, info.raa], dtype=torch.float32),
-                "extra": torch.tensor(list(info.extra.values()), dtype=torch.float32)
-                if info.extra
-                else torch.zeros(0, dtype=torch.float32),
+                "wavelengths": wavelengths,
+                "angles": angles,
+                "extra": extra_values,
             },
         }
 

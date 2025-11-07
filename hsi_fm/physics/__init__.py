@@ -1,6 +1,11 @@
 """Physics adapters bridging lab and overhead domains."""
 
-from .srf import gaussian_srf, convolve_srf
-from .renderer import LabToSensorRenderer
+from hsi_fm.physics.renderer import LabToSensorRenderer
+from hsi_fm.physics.srf import SpectralResponseFunction, convolve_srf, gaussian_srf
 
-__all__ = ["gaussian_srf", "convolve_srf", "LabToSensorRenderer"]
+__all__ = [
+    "SpectralResponseFunction",
+    "gaussian_srf",
+    "convolve_srf",
+    "LabToSensorRenderer",
+]

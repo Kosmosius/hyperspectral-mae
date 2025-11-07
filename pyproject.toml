@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=65", "wheel"]
+requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,6 +9,15 @@ description = "Hyperspectral foundation model scaffold"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{name = "OpenAI", email = "research@openai.com"}]
+license = {file = "LICENSE"}
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+]
 dependencies = [
   "numpy",
   "torch>=2.3",
@@ -16,9 +25,17 @@ dependencies = [
   "hydra-core",
 ]
 
+[project.scripts]
+hsi-train = "hsi_fm.scripts.train:main"
+hsi-eval = "hsi_fm.scripts.evaluate:main"
+
 [project.optional-dependencies]
 dev = [
   "pytest",
+  "black",
+  "ruff",
+  "isort",
+  "pre-commit",
 ]
 
 [tool.pytest.ini_options]

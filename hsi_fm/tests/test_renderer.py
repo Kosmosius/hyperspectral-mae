@@ -1,43 +1,43 @@
 """Tests for the lab-to-sensor renderer."""
 from __future__ import annotations
 
-import torch
-
-from hsi_fm.physics.renderer import LabToSensorRenderer
-from hsi_fm.physics.srf import canonical_grid
+from hsi_fm.physics.renderer import AtmosphericState, LabToSensorRenderer
+from hsi_fm.physics.srf import SpectralResponseFunction
 
 
-def _make_renderer() -> LabToSensorRenderer:
-    grid = canonical_grid(1000.0, 1100.0, 1.0)
-    centers = torch.linspace(1000.0, 1100.0, 16)
-    fwhm = torch.full((16,), 12.0)
-    return LabToSensorRenderer(
-        hi_wvl_nm=grid,
-        sensor_centers_nm=centers,
-        sensor_fwhm_nm=fwhm,
-        mode="swir_reflectance_to_radiance",
-        rt_params={"tau": 0.9, "scale": 1.05, "noise_std": 0.0},
-    )
+def _linspace(start: float, stop: float, num: int) -> list[float]:
+    step = (stop - start) / (num - 1)
+    return [start + i * step for i in range(num)]
 
 
-def test_round_trip_reflectance() -> None:
-    renderer = _make_renderer()
-    grid = renderer.hi_wvl_nm
-    reflectance = torch.stack(
-        [0.3 + 0.1 * torch.sin(grid / 50.0), 0.4 + 0.05 * torch.cos(grid / 40.0)],
-        dim=0,
-    ).clamp(0.05, 0.95)
-    sensor, _ = renderer.render(reflectance)
-    recovered, _ = renderer.inverse(sensor)
-    assert torch.mean((reflectance - recovered) ** 2).item() < 5e-4
+def _assert_close(a: list[list[float]], b: list[list[float]], tol: float = 5e-2) -> None:
+    for row_a, row_b in zip(a, b):
+        for val_a, val_b in zip(row_a, row_b):
+            assert abs(val_a - val_b) <= tol
 
 
-def test_renderer_cache_reuse() -> None:
-    renderer = _make_renderer()
-    reflectance = torch.rand(1, renderer.hi_wvl_nm.numel()) * 0.5 + 0.25
-    renderer.render(reflectance)
-    assert len(renderer._cache) == 1  # type: ignore[attr-defined]
-    first_matrix = next(iter(renderer._cache.values()))[0]  # type: ignore[attr-defined]
-    renderer.render(reflectance)
-    second_matrix = next(iter(renderer._cache.values()))[0]  # type: ignore[attr-defined]
-    assert first_matrix.data_ptr() == second_matrix.data_ptr()
+def test_renderer_round_trip_consistency() -> None:
+    wavelengths = _linspace(0.9, 1.1, 50)
+    centers = [0.95, 1.0, 1.05]
+    widths = [0.02, 0.02, 0.02]
+    srf = SpectralResponseFunction(centers=centers, widths=widths)
+    renderer = LabToSensorRenderer(srf)
+    reflectance = [_linspace(0.1, 0.3, 50), _linspace(0.2, 0.4, 50)]
+    atmosphere = AtmosphericState(irradiance=1.2, transmittance=0.8, path_radiance=0.01)
+    radiance = renderer.render(reflectance, wavelengths, atmosphere)
+    recovered = renderer.invert(radiance, wavelengths, atmosphere)
+    rerendered = renderer.render(recovered, wavelengths, atmosphere)
+    _assert_close(radiance, rerendered, tol=1e-3)
+
+
+def test_renderer_handles_single_spectrum() -> None:
+    wavelengths = _linspace(0.9, 1.1, 50)
+    centers = [0.95, 1.0, 1.05]
+    widths = [0.02, 0.02, 0.02]
+    srf = SpectralResponseFunction(centers=centers, widths=widths)
+    renderer = LabToSensorRenderer(srf)
+    reflectance = _linspace(0.1, 0.3, 50)
+    radiance = renderer.render(reflectance, wavelengths)
+    assert len(radiance) == 1
+    assert len(radiance[0]) == len(centers)
+

@@ -1,9 +1,8 @@
 # @package _global_
 defaults:
-  - data: synthetic
+  - data: emit
   - model: base
   - train: stage_a
-  - physics: mock
   - _self_
 
 seed: 1337

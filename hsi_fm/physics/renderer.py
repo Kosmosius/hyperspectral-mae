@@ -1,237 +1,131 @@
-"""Renderer bridging lab spectra and sensor measurements."""
+"""Simple physics renderer implemented without external dependencies."""
 from __future__ import annotations
 
-from collections import OrderedDict
-from typing import Dict, Optional, Tuple
+from dataclasses import dataclass
+from typing import List, Optional, Sequence, Union
 
-import torch
-from torch import Tensor
+from .srf import SpectralResponseFunction, convolve_srf, gaussian_srf
 
-from .rt import (
-    LWIRRTConfig,
-    SWIRRTConfig,
-    lwir_emit_radiance,
-    swir_radiance_to_reflectance,
-    swir_reflectance_to_radiance,
-)
-from .srf import SRF, canonical_grid, convolve_srf
 
-__all__ = ["LabToSensorRenderer", "canonical_grid"]
+Number = float
+
+
+VectorLike = Sequence[Number]
+MatrixLike = Sequence[VectorLike]
+
+
+def _ensure_2d(array: Union[VectorLike, MatrixLike]) -> List[List[Number]]:
+    array_list = list(array)  # type: ignore[arg-type]
+    if not array_list:
+        return []
+    first = array_list[0]
+    if isinstance(first, (list, tuple)):
+        return [list(row) for row in array_list]  # type: ignore[list-item]
+    return [list(array_list)]  # type: ignore[list-item]
+
+
+def _matmul(a: List[List[Number]], b: List[List[Number]]) -> List[List[Number]]:
+    if not a or not b:
+        return []
+    result: List[List[Number]] = []
+    b_t = list(map(list, zip(*b)))
+    for row in a:
+        result.append([sum(x * y for x, y in zip(row, col)) for col in b_t])
+    return result
+
+
+def _transpose(matrix: List[List[Number]]) -> List[List[Number]]:
+    return list(map(list, zip(*matrix))) if matrix else []
+
+
+def _identity(n: int) -> List[List[Number]]:
+    return [[1.0 if i == j else 0.0 for j in range(n)] for i in range(n)]
+
+
+def _augment(a: List[List[Number]], b: List[List[Number]]) -> List[List[Number]]:
+    return [row_a + row_b for row_a, row_b in zip(a, b)]
+
+
+def _gauss_jordan(matrix: List[List[Number]]) -> List[List[Number]]:
+    n = len(matrix)
+    m = len(matrix[0])
+    for col in range(n):
+        pivot = matrix[col][col]
+        if abs(pivot) < 1e-12:
+            raise ValueError("Matrix is singular and cannot be inverted")
+        inv_pivot = 1.0 / pivot
+        matrix[col] = [val * inv_pivot for val in matrix[col]]
+        for row in range(n):
+            if row == col:
+                continue
+            factor = matrix[row][col]
+            matrix[row] = [val - factor * pivot_val for val, pivot_val in zip(matrix[row], matrix[col])]
+    return [row[n:] for row in matrix]
+
+
+def _invert(matrix: List[List[Number]]) -> List[List[Number]]:
+    n = len(matrix)
+    identity = _identity(n)
+    augmented = _augment([row[:] for row in matrix], identity)
+    return _gauss_jordan(augmented)
+
+
+@dataclass
+class AtmosphericState:
+    irradiance: Number = 1.0
+    transmittance: Number = 1.0
+    path_radiance: Number = 0.0
 
 
 class LabToSensorRenderer:
-    """Differentiable renderer with SRF caching."""
-
-    def __init__(
-        self,
-        hi_wvl_nm: Tensor,
-        sensor_centers_nm: Tensor,
-        sensor_fwhm_nm: Tensor,
-        *,
-        mode: str = "swir_reflectance_to_radiance",
-        rt_params: Optional[Dict[str, float | Tensor]] = None,
-        cache_size: int = 8,
-    ) -> None:
-        self.hi_wvl_nm = torch.as_tensor(hi_wvl_nm, dtype=torch.float32)
-        if self.hi_wvl_nm.ndim != 1:
-            raise ValueError("hi_wvl_nm must be 1-D")
-        self.default_centers = torch.as_tensor(sensor_centers_nm, dtype=torch.float32)
-        self.default_fwhm = torch.as_tensor(sensor_fwhm_nm, dtype=torch.float32)
-        if self.default_centers.shape != self.default_fwhm.shape:
-            raise ValueError("Sensor centers/fwhm mismatch")
-        self.mode = mode
-        if mode not in {"swir_reflectance", "swir_reflectance_to_radiance", "lwir_radiance"}:
-            raise ValueError(f"Unsupported mode {mode}")
-        self.rt_params: Dict[str, float | Tensor] = dict(rt_params or {})
-        self._cache_size = cache_size
-        self._cache: OrderedDict[tuple, Tuple[Tensor, Tensor]] = OrderedDict()
-
-    def _resolve_sensor(
-        self,
-        centers_nm: Optional[Tensor],
-        fwhm_nm: Optional[Tensor],
-        dtype: torch.dtype,
-        device: torch.device,
-    ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
-        centers = torch.as_tensor(
-            centers_nm if centers_nm is not None else self.default_centers,
-            dtype=torch.float32,
-            device=device,
-        )
-        fwhm = torch.as_tensor(
-            fwhm_nm if fwhm_nm is not None else self.default_fwhm,
-            dtype=torch.float32,
-            device=device,
-        )
-        srf = SRF(centers_nm=centers.cpu(), fwhm_nm=fwhm.cpu())
-        matrix, pinv = srf.build_matrix(
-            self.hi_wvl_nm.cpu(),
-            dtype=dtype,
-            device=device,
-            cache=self._cache,
-        )
-        # maintain cache size
-        if len(self._cache) > self._cache_size:
-            self._cache.popitem(last=False)
-        hi_grid = self.hi_wvl_nm.to(device=device, dtype=dtype)
-        return centers, fwhm, matrix, pinv
-
-    def _solar_irradiance(self, device: torch.device, dtype: torch.dtype) -> Tensor:
-        if "solar_irradiance" in self.rt_params:
-            solar = torch.as_tensor(self.rt_params["solar_irradiance"], dtype=dtype, device=device)
-            if solar.ndim != 1:
-                raise ValueError("solar_irradiance must be 1-D")
-            return solar
-        hi = self.hi_wvl_nm.to(device=device, dtype=dtype)
-        norm = (hi - hi.min()) / (hi.max() - hi.min() + 1e-6)
-        return (1.0 + 0.1 * torch.sin(norm * 3.14159)).to(dtype=dtype)
+    def __init__(self, srf: SpectralResponseFunction):
+        self.srf = srf
 
     def render(
         self,
-        reflectance_hi: Tensor,
-        *,
-        sensor_centers_nm: Optional[Tensor] = None,
-        sensor_fwhm_nm: Optional[Tensor] = None,
-        rt_overrides: Optional[Dict[str, float | Tensor]] = None,
-        return_intermediates: bool = False,
-    ) -> Tuple[Tensor, Optional[Dict[str, Tensor]]]:
-        """Render lab reflectance to sensor measurements."""
+        reflectance: Sequence[Sequence[Number] | Number],
+        wavelengths: Sequence[Number],
+        atmosphere: Optional[AtmosphericState] = None,
+    ) -> List[List[Number]]:
+        atmosphere = atmosphere or AtmosphericState()
+        refl = _ensure_2d(reflectance)
+        if refl and len(refl[0]) != len(wavelengths):
+            raise ValueError("Reflectance grid mismatch")
+        radiance_hr = [
+            [atmosphere.irradiance * val * atmosphere.transmittance + atmosphere.path_radiance for val in row]
+            for row in refl
+        ]
+        return convolve_srf(radiance_hr, wavelengths, self.srf)
 
-        if reflectance_hi.ndim != 2:
-            raise ValueError("reflectance_hi must be (batch, L)")
-        device = reflectance_hi.device
-        dtype = reflectance_hi.dtype
-        centers, fwhm, matrix, _ = self._resolve_sensor(
-            sensor_centers_nm, sensor_fwhm_nm, dtype, device
-        )
-        hi_grid = self.hi_wvl_nm.to(device=device, dtype=dtype)
-        params = dict(self.rt_params)
-        if rt_overrides:
-            params.update(rt_overrides)
-        intermediates: Dict[str, Tensor] = {}
-
-        if self.mode == "swir_reflectance":
-            hi_signal = reflectance_hi
-        elif self.mode == "swir_reflectance_to_radiance":
-            cfg = SWIRRTConfig(
-                tau=float(params.get("tau", 0.9)),
-                scale=float(params.get("scale", 1.0)),
-                noise_std=float(params.get("noise_std", 0.0)),
-            )
-            solar = params.get("solar_irradiance")
-            if solar is None:
-                solar = self._solar_irradiance(device, dtype)
-            else:
-                solar = torch.as_tensor(solar, dtype=dtype, device=device)
-            hi_signal = swir_reflectance_to_radiance(
-                reflectance_hi,
-                solar,
-                cfg.tau,
-                cfg.scale,
-                cfg.noise_std,
-            )
-            intermediates["solar_irradiance"] = solar
-            intermediates["radiance_hi"] = hi_signal
-            intermediates["reflectance_hi"] = reflectance_hi
-        else:  # lwir_radiance
-            cfg = LWIRRTConfig(
-                gain=float(params.get("gain", 1e-3)),
-                offset=float(params.get("offset", 1.0)),
-            )
-            temperature = params.get("temperature")
-            if temperature is None:
-                temperature = torch.full((reflectance_hi.shape[0],), 300.0, device=device, dtype=dtype)
-            else:
-                temperature = torch.as_tensor(temperature, dtype=dtype, device=device)
-            emissivity = params.get("emissivity")
-            if emissivity is None:
-                emissivity = (1.0 - reflectance_hi).clamp(0.1, 1.0)
-            else:
-                emissivity = torch.as_tensor(emissivity, dtype=dtype, device=device)
-            planck = params.get("planck_L")
-            if planck is None:
-                planck = torch.exp(-((hi_grid - hi_grid.mean()) ** 2) / (2 * 250.0**2))
-            else:
-                planck = torch.as_tensor(planck, dtype=dtype, device=device)
-            hi_signal = lwir_emit_radiance(
-                temperature,
-                emissivity,
-                planck,
-                gain=cfg.gain,
-                offset=cfg.offset,
-            )
-            intermediates["temperature"] = temperature
-            intermediates["emissivity"] = emissivity
-            intermediates["planck_L"] = planck
-            intermediates["radiance_hi"] = hi_signal
-
-        sensor = convolve_srf(hi_signal, hi_grid, matrix)
-        intermediates["sensor_matrix"] = matrix
-        intermediates["sensor_centers_nm"] = centers
-        intermediates["sensor_fwhm_nm"] = fwhm
-        return sensor, (intermediates if return_intermediates else None)
-
-    def inverse(
+    def invert(
         self,
-        sensor_measurement: Tensor,
-        *,
-        sensor_centers_nm: Optional[Tensor] = None,
-        sensor_fwhm_nm: Optional[Tensor] = None,
-        rt_overrides: Optional[Dict[str, float | Tensor]] = None,
-        return_intermediates: bool = False,
-    ) -> Tuple[Tensor, Optional[Dict[str, Tensor]]]:
-        """Approximate inverse mapping back to high-resolution reflectance."""
-
-        if sensor_measurement.ndim != 2:
-            raise ValueError("sensor_measurement must be (batch, bands)")
-        device = sensor_measurement.device
-        dtype = sensor_measurement.dtype
-        centers, fwhm, matrix, pinv = self._resolve_sensor(
-            sensor_centers_nm, sensor_fwhm_nm, dtype, device
-        )
-        hi_grid = self.hi_wvl_nm.to(device=device, dtype=dtype)
-        params = dict(self.rt_params)
-        if rt_overrides:
-            params.update(rt_overrides)
-        intermediates: Dict[str, Tensor] = {
-            "sensor_matrix": matrix,
-            "sensor_centers_nm": centers,
-            "sensor_fwhm_nm": fwhm,
-        }
-
-        hi_signal = sensor_measurement @ pinv.transpose(-1, -2)
-        if self.mode == "swir_reflectance":
-            reflectance = hi_signal.clamp(0.0, 1.0)
-        elif self.mode == "swir_reflectance_to_radiance":
-            cfg = SWIRRTConfig(
-                tau=float(params.get("tau", 0.9)),
-                scale=float(params.get("scale", 1.0)),
-                noise_std=float(params.get("noise_std", 0.0)),
-            )
-            solar = params.get("solar_irradiance")
-            if solar is None:
-                solar = self._solar_irradiance(device, dtype)
-            else:
-                solar = torch.as_tensor(solar, dtype=dtype, device=device)
-            reflectance = swir_radiance_to_reflectance(hi_signal, solar, cfg.tau, cfg.scale)
-            intermediates["radiance_hi"] = hi_signal
-            intermediates["solar_irradiance"] = solar
+        radiance: Sequence[Sequence[Number] | Number],
+        wavelengths: Sequence[Number],
+        atmosphere: Optional[AtmosphericState] = None,
+    ) -> List[List[Number]]:
+        atmosphere = atmosphere or AtmosphericState()
+        rad = _ensure_2d(radiance)
+        if not rad:
+            return []
+        if self.srf.responses is None:
+            responses = gaussian_srf(self.srf.centers, self.srf.widths, wavelengths)
         else:
-            planck = params.get("planck_L")
-            if planck is None:
-                planck = torch.exp(-((hi_grid - hi_grid.mean()) ** 2) / (2 * 250.0**2))
-            else:
-                planck = torch.as_tensor(planck, dtype=dtype, device=device)
-            gain = float(params.get("gain", 1e-3))
-            offset = float(params.get("offset", 1.0))
-            temp_est = ((hi_signal / (planck.clamp_min(1e-6))).mean(dim=-1) - offset) / max(gain, 1e-6)
-            emissivity = params.get("emissivity")
-            if emissivity is None:
-                emissivity = torch.ones_like(hi_signal)
-            else:
-                emissivity = torch.as_tensor(emissivity, dtype=dtype, device=device)
-            reflectance = (1.0 - emissivity).clamp(0.0, 1.0)
-            intermediates["radiance_hi"] = hi_signal
-            intermediates["temperature"] = temp_est.unsqueeze(-1)
-        intermediates["reflectance_hi"] = reflectance
-        return reflectance, (intermediates if return_intermediates else None)
+            responses = [row[:] for row in self.srf.responses]
+        responses_t = _transpose(responses)
+        gram = _matmul(responses, responses_t)
+        epsilon = 1e-6
+        for i in range(len(gram)):
+            gram[i][i] += epsilon
+        gram_inv = _invert(gram)
+        pseudo = _matmul(responses_t, gram_inv)
+        scale = atmosphere.irradiance * atmosphere.transmittance + 1e-12
+        reflectance: List[List[Number]] = []
+        for measurement in rad:
+            y_col = [[val - atmosphere.path_radiance] for val in measurement]
+            x_col = _matmul(pseudo, y_col)
+            row = [val[0] / scale for val in x_col]
+            reflectance.append(row)
+        return reflectance
+
+
+__all__ = ["LabToSensorRenderer", "AtmosphericState"]

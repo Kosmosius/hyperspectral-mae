@@ -1,0 +1,14 @@
+# @package _global_
+defaults:
+  - data: synthetic
+  - model: base
+  - train: stage_a
+  - physics: mock
+  - _self_
+
+seed: 1337
+work_dir: "."
+
+logging:
+  backend: null  # optional: wandb
+  level: INFO

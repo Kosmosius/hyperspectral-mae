@@ -1,0 +1,16 @@
+stage: stage_b
+max_steps: 400
+batch_size_lab: 64
+batch_size_overhead: 64
+num_workers: 0
+optimizer:
+  name: adamw
+  lr: 1.0e-4
+  weight_decay: 0.05
+loss:
+  recon: 1.0
+  nce: 1.0
+  cycle: 1.0
+proj_dim: 256
+temperature: 0.1
+precision: bf16

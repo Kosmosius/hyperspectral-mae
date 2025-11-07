@@ -1,0 +1,27 @@
+name: synthetic
+sensor: SYNTH
+wavelength_grid: swir
+synthetic:
+  channels: 128
+  image_size: 96
+  length: 512
+  lab:
+    length: 256
+    num_classes: 8
+    min_nm: 900.0
+    max_nm: 2500.0
+    step_nm: 5.0
+  overhead:
+    length: 256
+    sensor_bands: 64
+    fwhm_nm: 15.0
+    tau_jitter: 0.02
+    scale_jitter: 0.02
+    noise_std: 0.002
+patch:
+  height: 16
+  width: 16
+  stride: 8
+sampler:
+  mix_sensors: false
+  include_lab: false

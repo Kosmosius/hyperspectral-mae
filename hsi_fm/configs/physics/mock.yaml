@@ -1,0 +1,5 @@
+tau: 0.9
+scale: 1.1
+noise_std: 0.001
+gain: 0.001
+offset: 1.0

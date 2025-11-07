@@ -1,0 +1,13 @@
+# @package _global_
+defaults:
+  - data: emit
+  - model: base
+  - train: stage_a
+  - _self_
+
+seed: 1337
+work_dir: "."
+
+logging:
+  backend: null  # optional: wandb
+  level: INFO

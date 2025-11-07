@@ -1,0 +1,8 @@
+name: base_mae
+embed_dim: 256
+depth: 12
+num_heads: 8
+mlp_ratio: 4.0
+masking:
+  spatial_ratio: 0.6
+  spectral_ratio: 0.3

@@ -11,3 +11,8 @@ alignment:
   contrastive_weight: 1.0
   cycle_weight: 0.5
 precision: bf16
+ddp: false
+use_flash: false
+use_checkpointing: false
+clip_grad_norm: 1.0
+checkpoint_path: null

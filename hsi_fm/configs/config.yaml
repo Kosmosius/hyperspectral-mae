@@ -1,6 +1,6 @@
 # @package _global_
 defaults:
-  - data: emit
+  - data: synthetic
   - model: base
   - train: stage_a
   - _self_

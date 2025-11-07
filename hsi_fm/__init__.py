@@ -14,7 +14,15 @@ from hsi_fm.model import (
     mae_loss,
     sam_loss,
 )
-from hsi_fm.physics import LabToSensorRenderer, SpectralResponseFunction, convolve_srf, gaussian_srf
+from hsi_fm.physics import (
+    LabToSensorRenderer,
+    SpectralResponseFunction,
+    convolve_srf,
+    convolve_srf_torch,
+    gaussian_srf,
+    gaussian_srf_torch,
+    normalise_srf,
+)
 from hsi_fm.train import (
     EMA,
     EMAConfig,
@@ -45,7 +53,10 @@ __all__ = [
     "dice_loss",
     "SpectralResponseFunction",
     "convolve_srf",
+    "convolve_srf_torch",
     "gaussian_srf",
+    "gaussian_srf_torch",
+    "normalise_srf",
     "LabToSensorRenderer",
     "EMA",
     "EMAConfig",

@@ -1,0 +1,10 @@
+name: emit_l1b
+source: emit_l1b
+paths: []
+patch:
+  height: 32
+  width: 32
+  stride: 16
+qa:
+  min_fraction: 0.6
+srf_table: null
